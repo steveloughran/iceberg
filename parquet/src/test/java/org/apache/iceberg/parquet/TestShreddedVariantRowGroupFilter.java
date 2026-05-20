@@ -104,7 +104,7 @@ class TestShreddedVariantRowGroupFilter {
 
   @BeforeEach
   void before() {
-    ParquetMetricsRowGroupFilter.resetShreddedMetricsCounter();
+    ParquetMetricsRowGroupFilter.resetShreddedMetricsCounters();
   }
 
   @Test
@@ -618,7 +618,7 @@ class TestShreddedVariantRowGroupFilter {
 
   @Test
   void testShreddedUUIDIn() throws IOException {
-    ParquetMetricsRowGroupFilter.resetShreddedMetricsCounter();
+    ParquetMetricsRowGroupFilter.resetShreddedMetricsCounters();
 
     // Row group has deviceid range [UUID_LOW, UUID_HIGH]
     List<Variant> variants = uuidDeviceIdVariants(UUID_LOW, UUID_MID, UUID_HIGH);
@@ -658,13 +658,94 @@ class TestShreddedVariantRowGroupFilter {
     assertShreddedMetricsProcessed(expected++);
   }
 
+  // ---------------------------------------------------------------------------
+  // Skip-counter tests: prove the filter is actually skipping row groups
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void testSkipCounterLessThanSkips() throws IOException {
+    List<Variant> variants = intPriceVariants(10, 11, 12, 13, 14);
+    assertThat(shouldRead(lessThan(PRICE, 10), variants)).isFalse();
+    assertShreddedSkipped(1);
+  }
+
+  @Test
+  void testSkipCounterGreaterThanSkips() throws IOException {
+    List<Variant> variants = intPriceVariants(10, 11, 12, 13, 14);
+    assertThat(shouldRead(greaterThan(PRICE, 14), variants)).isFalse();
+    assertShreddedSkipped(1);
+  }
+
+  @Test
+  void testSkipCounterEqualBelowRangeSkips() throws IOException {
+    List<Variant> variants = intPriceVariants(10, 11, 12, 13, 14);
+    assertThat(shouldRead(equal(PRICE, 5), variants)).isFalse();
+    assertShreddedSkipped(1);
+  }
+
+  @Test
+  void testSkipCounterEqualAboveRangeSkips() throws IOException {
+    List<Variant> variants = intPriceVariants(10, 11, 12, 13, 14);
+    assertThat(shouldRead(equal(PRICE, 99), variants)).isFalse();
+    assertShreddedSkipped(1);
+  }
+
+  @Test
+  void testSkipCounterEqualInRangeDoesNotSkip() throws IOException {
+    List<Variant> variants = intPriceVariants(10, 11, 12, 13, 14);
+    assertThat(shouldRead(equal(PRICE, 12), variants)).isTrue();
+    // examined > 0, but no skip
+    assertShreddedSkipped(0);
+    assertShreddedMetricsProcessed(1);
+  }
+
+  @Test
+  void testSkipCounterIsNullWithNoNullsSkips() throws IOException {
+    List<Variant> variants = intPriceVariants(10, 11, 12);
+    assertThat(shouldRead(isNull(PRICE), variants)).isFalse();
+    assertShreddedSkipped(1);
+  }
+
+  @Test
+  void testSkipCounterNotNullAllNullsSkips() throws IOException {
+    ImmutableList.Builder<Variant> builder = ImmutableList.builder();
+    for (int i = 0; i < 3; i++) {
+      ShreddedObject obj = Variants.object(METADATA);
+      obj.put("price", Variants.ofNull());
+      builder.add(Variant.of(METADATA, obj));
+    }
+    List<Variant> variants = builder.build();
+    ShreddedObject example = Variants.object(METADATA);
+    example.put("price", Variants.of(0));
+    VariantShreddingFunction shreddingFunc =
+        (id, name) -> ParquetVariantUtil.toParquetSchema(example);
+
+    assertThat(shouldRead(notNull(PRICE), variants, shreddingFunc)).isFalse();
+    assertShreddedSkipped(1);
+  }
+
+  @Test
+  void testSkipCounterUnshreddedPathDoesNotSkip() throws IOException {
+    // $.name isn't in the shredded schema → falls back to MIGHT_MATCH before consulting stats →
+    // the skipped counter must NOT advance (we don't count fallbacks as skips).
+    List<Variant> variants = intPriceVariants(10, 11, 12);
+    assertThat(shouldRead(equal(NAME, "foo"), variants)).isTrue();
+    assertShreddedSkipped(0);
+  }
+
+  // --- helpers ---
+
   private static void assertShreddedMetricsProcessed(final int expected) {
-    assertThat(ParquetMetricsRowGroupFilter.variantPredicatesShreddedMetrics())
+    assertThat(ParquetMetricsRowGroupFilter.variantPredicatesShreddedMetricsEvaluated())
         .describedAs("Count of shredded metrics filtered on in predicates")
         .isEqualTo(expected);
   }
 
-  // --- helpers ---
+  private static void assertShreddedSkipped(final long expected) {
+    assertThat(ParquetMetricsRowGroupFilter.variantPredicatesShreddedSkipped())
+        .describedAs("Count of row groups skipped by shredded variant predicates")
+        .isEqualTo(expected);
+  }
 
   private List<Variant> intPriceVariants(int... prices) {
     ImmutableList.Builder<Variant> builder = ImmutableList.builder();

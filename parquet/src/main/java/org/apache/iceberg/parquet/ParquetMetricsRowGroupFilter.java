@@ -83,7 +83,12 @@ public class ParquetMetricsRowGroupFilter {
    * <p>This permits assertions to be made that variant predicate pushdown reached this far and
    * processed shredded columns.
    */
-  private static final AtomicLong VARIANT_PREDICATES_SHREDDED_METRICS = new AtomicLong();
+  private static final AtomicLong VARIANT_PREDICATES_SHREDDED_METRICS_EVALUATED = new AtomicLong();
+
+  /**
+   * Counter for row groups proven skippable by a shredded variant predicate.
+   */
+  private static final AtomicLong VARIANT_PREDICATES_SHREDDED_SKIPPED = new AtomicLong();
 
   public ParquetMetricsRowGroupFilter(Schema schema, Expression unbound) {
     this(schema, unbound, true);
@@ -632,7 +637,7 @@ public class ParquetMetricsRowGroupFilter {
     public <T> Boolean predicate(BoundPredicate<T> pred) {
       if (pred.term() instanceof BoundExtract<T> term) {
         // it's a variant predicate: process accordingly.
-        return compareVariant(pred, term);
+        return recordOutcome(compareVariant(pred, term));
       } else {
         return super.predicate(pred);
       }
@@ -668,7 +673,7 @@ public class ParquetMetricsRowGroupFilter {
         return ROWS_MIGHT_MATCH;
       }
       // increment shredded metrics counter.
-      VARIANT_PREDICATES_SHREDDED_METRICS.incrementAndGet();
+      VARIANT_PREDICATES_SHREDDED_METRICS_EVALUATED.incrementAndGet();
 
       // now do the evaluation.
       LOG.info("Evaluating column {} with info {}", columnPath, columnInfo);
@@ -698,6 +703,16 @@ public class ParquetMetricsRowGroupFilter {
       }
       // get this far: it's a shredded variant with column statistics
       return evalBinaryPredicateOnShreddedVariant(pred, extract, parquetType, colStats);
+    }
+
+    /**
+     * Increment the skipped counter on {@code ROWS_CANNOT_MATCH} and return the input unchanged.
+     */
+    private boolean recordOutcome(boolean shouldRead) {
+      if (!shouldRead) {
+        VARIANT_PREDICATES_SHREDDED_SKIPPED.incrementAndGet();
+      }
+      return shouldRead;
     }
 
     /**
@@ -983,13 +998,25 @@ public class ParquetMetricsRowGroupFilter {
    * @return zero or a positive integer
    */
   @VisibleForTesting
-  static long variantPredicatesShreddedMetrics() {
-    return VARIANT_PREDICATES_SHREDDED_METRICS.get();
+  static long variantPredicatesShreddedMetricsEvaluated() {
+    return VARIANT_PREDICATES_SHREDDED_METRICS_EVALUATED.get();
   }
 
-  /** Reset the shredded metrics counter. */
+  /**
+   * The number of row groups proven skippable by a shredded variant predicate. Will always be equal to or less than
+   * the value of {@link #variantPredicatesShreddedMetricsEvaluated()}.
+   *
+   * @return zero or a positive integer
+   */
   @VisibleForTesting
-  static void resetShreddedMetricsCounter() {
-    VARIANT_PREDICATES_SHREDDED_METRICS.set(0);
+  static long variantPredicatesShreddedSkipped() {
+    return VARIANT_PREDICATES_SHREDDED_SKIPPED.get();
+  }
+
+  /** Reset both shredded metrics counters (examined and skipped). */
+  @VisibleForTesting
+  static void resetShreddedMetricsCounters() {
+    VARIANT_PREDICATES_SHREDDED_METRICS_EVALUATED.set(0);
+    VARIANT_PREDICATES_SHREDDED_SKIPPED.set(0);
   }
 }

@@ -164,7 +164,8 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 "category = 5",
                 "isnotnull(category) AND (category = 5)",
                 "category IS NOT NULL, category = 5",
-                0, 0,
+                0,
+                0,
                 ImmutableList.of(row(5L))));
   }
 
@@ -182,7 +183,8 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 ICEBERG_VARCAT + " = 5",
                 SPARK_ISNOTNULL_NESTED + " AND (" + SPARK_VARIANT_GET + " = 5)",
                 ICEBERG_NESTED_ISNOTNULL + ", " + ICEBERG_VARCAT + " = 5",
-                2, 2,
+                2,
+                2,
                 ImmutableList.of(row(5L))));
   }
 
@@ -209,7 +211,8 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                     + " > 4, "
                     + ICEBERG_VARCAT
                     + " < 7",
-                4, 4,
+                4,
+                4,
                 ImmutableList.of(row(5L), row(6L))));
   }
 
@@ -236,7 +239,8 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                     + " >= 4, "
                     + ICEBERG_VARCAT
                     + " <= 7",
-                4, 4,
+                4,
+                4,
                 ImmutableList.of(row(4L), row(5L), row(6L), row(7L))));
   }
 
@@ -254,7 +258,8 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 ICEBERG_VARCAT + " = 5",
                 SPARK_ISNOTNULL_NESTED + " AND (" + SPARK_VARIANT_GET + " = 5)",
                 ICEBERG_NESTED_ISNOTNULL + ", " + ICEBERG_VARCAT + " = 5",
-                2, 2,
+                2,
+                2,
                 ImmutableList.of(row(5))));
   }
 
@@ -269,7 +274,8 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 ICEBERG_VARCAT + " IN (5, 10)",
                 SPARK_VARIANT_GET + " IN (5,10)",
                 ICEBERG_VARCAT + " IN (5, 10)", // no null check
-                4, 4,
+                4,
+                4,
                 ImmutableList.of(row(5L), row(10L))));
   }
 
@@ -287,13 +293,13 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 ICEBERG_VARCAT + " IN (100, 400)",
                 SPARK_VARIANT_GET + " IN (100,400)",
                 "",
-                0, 0,
+                0,
+                0,
                 ImmutableList.of()));
   }
 
   /**
-   * Set membership of a single element is remapped to equality, filtering takes place in
-   * planning.
+   * Set membership of a single element is remapped to equality, filtering takes place in planning.
    */
   @TestTemplate
   public void filterVariantCategorySetMembership3() {
@@ -305,7 +311,8 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 ICEBERG_VARCAT + " IN (100)",
                 SPARK_ISNOTNULL_NESTED + " AND (" + SPARK_VARIANT_GET + " = 100)",
                 "",
-                0, 0,
+                0,
+                0,
                 ImmutableList.of()));
   }
 
@@ -323,13 +330,12 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 ICEBERG_VARCAT + " IN (4)",
                 SPARK_ISNOTNULL_NESTED + " AND (" + SPARK_VARIANT_GET + " = 4)",
                 ICEBERG_NESTED_ISNOTNULL + ", " + ICEBERG_VARCAT + " = 4",
-                2, 2,
+                2,
+                2,
                 ImmutableList.of(row(4L))));
   }
 
-  /**
-   * Evaluation of the IS NULL predicate.
-   */
+  /** Evaluation of the IS NULL predicate. */
   @TestTemplate
   public void filterVariantCategoryIsNull() {
     withDefaultTimeZone(
@@ -340,18 +346,15 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 ICEBERG_VARCAT + " IS NULL",
                 "isnull(" + SPARK_VARIANT_GET + ")",
                 "",
-                4, 4,
+                4,
+                4,
                 ImmutableList.of()));
   }
 
-  /**
-   * Evaluation of the IS NOT NULL predicate; this finds everything.
-   */
+  /** Evaluation of the IS NOT NULL predicate; this finds everything. */
   @TestTemplate
   public void filterVariantCategoryIsNotNull() {
-    List<Object[]> rows = LongStream.rangeClosed(0, 19)
-                                    .mapToObj(this::row)
-                                    .toList();
+    List<Object[]> rows = LongStream.rangeClosed(0, 19).mapToObj(this::row).toList();
     withDefaultTimeZone(
         "UTC",
         () ->
@@ -360,7 +363,8 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 ICEBERG_VARCAT + " IS NOT NULL",
                 SPARK_ISNOTNULL_NESTED + " AND isnotnull(" + SPARK_VARIANT_GET + ")",
                 "nested IS NOT NULL, variant_get(nested, '$.varcategory', 'int') IS NOT NULL",
-                4, 4,
+                4,
+                4,
                 rows));
   }
 
@@ -378,7 +382,8 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
                 "variant_get(arr, '$[0]', 'int') = 5",
                 "isnotnull(arr) AND (variant_get(arr, $[0], IntegerType, true, Some(UTC)) = 5)",
                 "arr IS NOT NULL",
-                0, 0,
+                0,
+                0,
                 ImmutableList.of(row(5L))));
   }
 
@@ -395,10 +400,10 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
    * @param predicate SQL WHERE clause (no "WHERE" keyword)
    * @param sparkFilter expected post-scan Spark Filter node text
    * @param icebergFilters expected {@code filters=...} value from the Iceberg scan node; empty
-   * string means no Iceberg pushdown shall take places.
+   *     string means no Iceberg pushdown shall take places.
    * @param expectedPlanningEvaluations expected number of evaluations during planning
-   * @param expectedExecutionEvaluations number of evaluations of a rowgroup filter predicate
-   * on shredded column.
+   * @param expectedExecutionEvaluations number of evaluations of a rowgroup filter predicate on
+   *     shredded column.
    * @param expectedRows expected result rows in id order
    */
   private void checkFilters(
@@ -410,12 +415,12 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
       int expectedExecutionEvaluations,
       List<Object[]> expectedRows) {
 
-    ParquetMetricsRowGroupFilter.resetShreddedMetricsCounter();
+    ParquetMetricsRowGroupFilter.resetShreddedMetricsCounters();
     String query =
         String.format("SELECT %s FROM %s WHERE %s ORDER BY id", projection, tableName, predicate);
 
     SparkPlan plan = executeAndKeepPlan(query);
-    long planShredCount = ParquetMetricsRowGroupFilter.variantPredicatesShreddedMetrics();
+    long planShredCount = ParquetMetricsRowGroupFilter.variantPredicatesShreddedMetricsEvaluated();
     String planString = plan.toString().replaceAll("#\\d+L?", "");
     String summary = String.format("%s with plan shred count %d", query, planShredCount);
 
@@ -424,7 +429,9 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
         .containsAnyOf("Filter (" + sparkFilter + ")", "Filter " + sparkFilter);
 
     if (!icebergFilters.isEmpty()) {
-      assertThat(planString).as("No iceberg scan generated from %s", summary).contains("IcebergScan");
+      assertThat(planString)
+          .as("No iceberg scan generated from %s", summary)
+          .contains("IcebergScan");
       assertThat(planString)
           .as("Iceberg pushed filters of must match from %s", summary)
           .contains(", filters=" + icebergFilters + ",");
@@ -435,20 +442,20 @@ public class TestSparkVariantFilterPushDown extends TestBaseWithCatalog {
     }
 
     if (shredded) {
-      assertThat(ParquetMetricsRowGroupFilter.variantPredicatesShreddedMetrics())
-          .describedAs("Count of shredded metrics filtered during planning of of %s to plan %s",
+      assertThat(ParquetMetricsRowGroupFilter.variantPredicatesShreddedMetricsEvaluated())
+          .describedAs(
+              "Count of shredded metrics filtered during planning of of %s to plan %s",
               summary, planString)
           .isEqualTo(expectedPlanningEvaluations);
     }
-    ParquetMetricsRowGroupFilter.resetShreddedMetricsCounter();
-    final List<Object[]> rows = sql("SELECT %s FROM %s WHERE %s ORDER BY id", projection, selectTarget(), predicate);
-    assertEquals(
-        "Execution of " + summary + " to plan " + planString,
-        expectedRows,
-        rows);
+    ParquetMetricsRowGroupFilter.resetShreddedMetricsCounters();
+    final List<Object[]> rows =
+        sql("SELECT %s FROM %s WHERE %s ORDER BY id", projection, selectTarget(), predicate);
+    assertEquals("Execution of " + summary + " to plan " + planString, expectedRows, rows);
     if (shredded) {
-      assertThat(ParquetMetricsRowGroupFilter.variantPredicatesShreddedMetrics())
-          .describedAs("Count of shredded metrics filtered during execution of of %s to plan %s",
+      assertThat(ParquetMetricsRowGroupFilter.variantPredicatesShreddedMetricsEvaluated())
+          .describedAs(
+              "Count of shredded metrics filtered during execution of of %s to plan %s",
               summary, planString)
           .isEqualTo(expectedExecutionEvaluations);
     }
