@@ -85,9 +85,7 @@ public class ParquetMetricsRowGroupFilter {
    */
   private static final AtomicLong VARIANT_PREDICATES_SHREDDED_METRICS_EVALUATED = new AtomicLong();
 
-  /**
-   * Counter for row groups proven skippable by a shredded variant predicate.
-   */
+  /** Counter for row groups proven skippable by a shredded variant predicate. */
   private static final AtomicLong VARIANT_PREDICATES_SHREDDED_SKIPPED = new AtomicLong();
 
   public ParquetMetricsRowGroupFilter(Schema schema, Expression unbound) {
@@ -131,9 +129,15 @@ public class ParquetMetricsRowGroupFilter {
     private Map<Integer, Long> valueCounts = null;
     private Map<Integer, Function<Object, Object>> conversions = null;
 
-    // ID-less columns collected during the main column scan for lazy variantInfoByColumnPath build
+    /**
+     * ID-less columns collected during the main column scan for lazy variantInfoByColumnPath build.
+     */
     private List<VariantColumnInfo> shreddedVariantColumns = null;
-    // Built lazily on the first compareVariant() call; null means not yet built
+
+    /**
+     * Built lazily on the first compareVariant() call; null means not yet built. TODO: should
+     * construction be synchronized?
+     */
     private Map<ColumnPath, VariantColumnInfo> variantInfoByColumnPath = null;
 
     private boolean eval(MessageType fileSchema, BlockMetaData rowGroup) {
@@ -655,11 +659,10 @@ public class ParquetMetricsRowGroupFilter {
      */
     private <T> boolean compareVariant(BoundPredicate<T> pred, BoundExtract<T> extract) {
       if (variantInfoByColumnPath == null) {
-        // TODO: concurrency ?
         buildVariantInfo();
       }
       int fieldId = extract.ref().fieldId();
-      LOG.info("comparing variant {}", extract);
+      LOG.debug("comparing variant {}", extract);
       String colName = variantColumnNames.get(fieldId);
       if (colName == null) {
         // not in the variant columns
@@ -676,7 +679,7 @@ public class ParquetMetricsRowGroupFilter {
       VARIANT_PREDICATES_SHREDDED_METRICS_EVALUATED.incrementAndGet();
 
       // now do the evaluation.
-      LOG.info("Evaluating column {} with info {}", columnPath, columnInfo);
+      LOG.debug("Evaluating column {} with info {}", columnPath, columnInfo);
       PrimitiveType parquetType = columnInfo.type();
       final ColumnChunkMetaData col = columnInfo.chunkMetaData;
       Statistics<?> colStats = col.getStatistics();
@@ -818,7 +821,7 @@ public class ParquetMetricsRowGroupFilter {
       if (literalSet.size() > IN_PREDICATE_LIMIT) {
         return ROWS_MIGHT_MATCH;
       }
-      LOG.info("Set membership evaluation");
+      LOG.debug("Set membership evaluation");
       Function<Object, Object> converter =
           ParquetConversions.converterFromParquet(parquetType, extract.type());
       T min = (T) converter.apply(colStats.genericGetMin());
@@ -838,7 +841,7 @@ public class ParquetMetricsRowGroupFilter {
           candidates.stream().filter(v -> pred.term().comparator().compare(max, v) >= 0).toList();
 
       final boolean match = candidates.isEmpty() ? ROWS_CANNOT_MATCH : ROWS_MIGHT_MATCH;
-      LOG.info("Outcome match={}", match);
+      LOG.debug("Outcome match={}", match);
       return match;
     }
 
@@ -854,7 +857,7 @@ public class ParquetMetricsRowGroupFilter {
      */
     private <T> boolean evalUnaryPredicate(
         BoundPredicate<T> pred, Statistics<?> colStats, long valueCount) {
-      LOG.info("Evaluating unary predicate: {}", pred.op());
+      LOG.debug("Evaluating unary predicate: {}", pred.op());
       switch (pred.op()) {
         case IS_NULL -> {
           // If every row has a non-null typed value, no row can match IS_NULL
@@ -922,7 +925,7 @@ public class ParquetMetricsRowGroupFilter {
    * @return the map of variant column names, may be empty.
    */
   private Map<Integer, String> buildVariantColumnNames(MessageType fileSchema) {
-    LOG.info("Building variant column names...");
+    LOG.debug("Building variant column names...");
     Map<Integer, String> names = Maps.newHashMap();
     for (org.apache.parquet.schema.Type field : fileSchema.getFields()) {
       if (field.getId() != null) {
@@ -933,7 +936,7 @@ public class ParquetMetricsRowGroupFilter {
         }
       }
     }
-    LOG.info("Found {} names", names.size());
+    LOG.debug("Found {} names", names.size());
     return names;
   }
 
@@ -1003,8 +1006,8 @@ public class ParquetMetricsRowGroupFilter {
   }
 
   /**
-   * The number of row groups proven skippable by a shredded variant predicate. Will always be equal to or less than
-   * the value of {@link #variantPredicatesShreddedMetricsEvaluated()}.
+   * The number of row groups proven skippable by a shredded variant predicate. Will always be equal
+   * to or less than the value of {@link #variantPredicatesShreddedMetricsEvaluated()}.
    *
    * @return zero or a positive integer
    */
